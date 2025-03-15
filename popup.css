@@ -1,0 +1,127 @@
+@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap");
+
+body {
+  width: 380px;
+  max-height: 500px;
+  font-family: 'Montserrat', sans-serif;
+  margin: 0;
+  padding: 10px;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Montserrat', sans-serif;
+}
+
+h2 {
+  text-align: center;
+  color: #c00000;
+  margin-top: 0;
+}
+
+.message {
+  padding: 10px;
+  text-align: center;
+}
+
+.error {
+  color: #c00000;
+}
+
+#search-input {
+  width: 100%;
+  padding: 8px;
+  box-sizing: border-box;
+  margin-bottom: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+#search-input:focus {
+  outline: none;
+  border-color: #c00000;
+  box-shadow: 0 0 3px rgba(204, 0, 0, 0.3);
+}
+
+#results-container {
+  max-height: 350px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  
+  /* Chrome, Edge, Safari, Opera */
+  &::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 20px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    border-radius: 20px;
+  }
+
+  /* Firefox */
+  scrollbar-width: thin;
+  scrollbar-color: #f1f1f1;
+}
+
+.result-item {
+  padding: 10px;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  display: flex;
+  align-items: flex-start;
+}
+
+.result-left {
+  min-width: 30px;
+  margin-right: 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.highlight {
+  background-color: #fff2a8;
+  font-weight: bold;
+  border-radius: 2px;
+}
+
+.timestamp {
+  color: #c00000;
+  font-weight: bold;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.score-label {
+  font-size: 0.7em;
+  color: #666;
+  white-space: nowrap;
+}
+
+.score-value {
+  font-size: 0.7em;
+  color: #666;
+  white-space: nowrap;
+  font-weight: bold;
+}
+
+.caption-text {
+  line-height: 1.4;
+  flex-grow: 1;
+}
+
+#status {
+  margin-bottom: 10px;
+  font-size: 14px;
+  white-space: pre-line;
+}
+
+/* Remove old score style that's no longer needed */
+.score {
+  display: none;
+}

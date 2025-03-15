@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>YouTube CC Search</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div id="app">
+    <h2>YouTube CC Search</h2>
+    <div id="status" class="message">Loading...</div>
+    <div id="search-container" style="display:none;">
+      <input type="text" id="search-input" placeholder="Search in captions...">
+      <div id="results-container">
+        <div id="results-list"></div>
+      </div>
+    </div>
+  </div>
+  <script src="fuzzysort.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
