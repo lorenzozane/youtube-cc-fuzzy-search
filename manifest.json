@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "YouTube CC Search",
+  "name": "YouTube CC Fuzzy Search",
   "version": "1.0",
   "description": "Search through YouTube video subtitles",
   "permissions": ["activeTab", "scripting", "tabs"],
