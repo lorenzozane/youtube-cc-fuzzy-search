@@ -2,6 +2,7 @@ let subtitles = [];
 let currentVideoId = '';
 let retryCount = 0;
 let currentSortOrder = 'score'; // Default sort order
+let currentTheme = 'light'; // Default theme
 const MAX_RETRIES = 5;
 const RETRY_INTERVAL = 2000; // 2 seconds
 
@@ -13,6 +14,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   const resultsList = document.getElementById('results-list');
   const sortToggle = document.getElementById('sort-toggle');
   const sortText = document.getElementById('sort-text');
+  const themeToggle = document.getElementById('theme-toggle');
+  
+  // Initialize theme from storage
+  initializeTheme();
+  
+  // Set up theme toggle
+  themeToggle.addEventListener('click', toggleTheme);
   
   try {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -61,6 +69,42 @@ document.addEventListener('DOMContentLoaded', async () => {
     statusDiv.className = 'message error';
   }
 });
+
+// Get theme from storage and apply it
+async function initializeTheme() {
+  try {
+    const result = await chrome.storage.local.get('theme');
+    currentTheme = result.theme || 'light';
+    applyTheme(currentTheme);
+    document.documentElement.setAttribute('data-theme', currentTheme);
+  } catch (error) {
+    console.error('Error initializing theme:', error);
+    // Default to light theme if there's an error
+    currentTheme = 'light';
+    applyTheme('light');
+  }
+}
+
+// Toggle between light and dark themes
+function toggleTheme() {
+  currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+  applyTheme(currentTheme);
+  saveTheme(currentTheme);
+}
+
+// Apply the selected theme
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+}
+
+// Save theme preference to storage
+async function saveTheme(theme) {
+  try {
+    await chrome.storage.local.set({ theme: theme });
+  } catch (error) {
+    console.error('Error saving theme:', error);
+  }
+}
 
 // Function to request captions with retry logic
 function requestCaptions(tabId, statusDiv, searchContainer, searchInput) {

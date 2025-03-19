@@ -3,7 +3,7 @@
   "name": "YouTube CC Fuzzy Search",
   "version": "1.0",
   "description": "Search through YouTube video subtitles",
-  "permissions": ["activeTab", "scripting", "tabs"],
+  "permissions": ["activeTab", "scripting", "tabs", "storage"],
   "host_permissions": ["*://*.youtube.com/*"],
   "background": {
     "service_worker": "background.js"

@@ -14,11 +14,10 @@ A browser extension that enables fuzzy search through YouTube video subtitles (C
 - Clicking on search results te video automatically **Jump to Timestamp** 
 - Search results are shown with surrounding **Caption Context** for better understanding
 - **Real-time Search** update results as you type with minimal delay
-- **Result Sorting** option to sort by timestamp or match score
 
 ## Feature Roadmap
 - [x] Custom ordering
-- [ ] Dark mode
+- [x] Dark mode
 - [ ] Add settings for parameters
 
 ## Installation
