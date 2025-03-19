@@ -1,6 +1,7 @@
 let subtitles = [];
 let currentVideoId = '';
 let retryCount = 0;
+let currentSortOrder = 'score'; // Default sort order
 const MAX_RETRIES = 5;
 const RETRY_INTERVAL = 2000; // 2 seconds
 
@@ -10,6 +11,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const searchContainer = document.getElementById('search-container');
   const searchInput = document.getElementById('search-input');
   const resultsList = document.getElementById('results-list');
+  const sortToggle = document.getElementById('sort-toggle');
+  const sortText = document.getElementById('sort-text');
   
   try {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -33,8 +36,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
       
-      performSearch(searchTerm, resultsList);
+      performSearch(searchTerm, resultsList, currentSortOrder);
     }, 300));
+    
+    // Set up sort toggle button handler
+    sortToggle.addEventListener('click', () => {
+      // Toggle between 'score' and 'timestamp'
+      currentSortOrder = currentSortOrder === 'score' ? 'timestamp' : 'score';
+      
+      // Update the button text
+      sortText.textContent = currentSortOrder.charAt(0).toUpperCase() + currentSortOrder.slice(1);
+      
+      const searchTerm = searchInput.value.trim();
+      
+      if (searchTerm.length < 2) {
+        return;
+      }
+      
+      performSearch(searchTerm, resultsList, currentSortOrder);
+    });
     
   } catch (error) {
     statusDiv.textContent = `Error: ${error.message}`;
@@ -153,7 +173,7 @@ function injectContentScriptAndRetry(tabId, statusDiv, searchContainer, searchIn
 }
 
 // Perform fuzzy search
-function performSearch(query, resultsList) {
+function performSearch(query, resultsList, sortOrder = 'score') {
   if (!subtitles.length) return;
   
   // Create searchable caption segments with context
@@ -169,15 +189,18 @@ function performSearch(query, resultsList) {
   // Deduplicate results based on timestamp proximity
   const deduplicatedResults = deduplicateResults(results);
   
+  // Sort results based on selected order
+  const sortedResults = sortResults(deduplicatedResults, sortOrder);
+  
   // Display results
   resultsList.innerHTML = '';
   
-  if (deduplicatedResults.length === 0) {
+  if (sortedResults.length === 0) {
     resultsList.innerHTML = '<div class="message">No matches found</div>';
     return;
   }
   
-  deduplicatedResults.forEach(result => {
+  sortedResults.forEach(result => {
     const item = document.createElement('div');
     item.className = 'result-item';
     
@@ -202,14 +225,13 @@ function performSearch(query, resultsList) {
     `;
     
     // Add click event to jump to that timestamp in the video
-    // Now using contextStart instead of start
     item.addEventListener('click', () => {
       chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
         chrome.tabs.sendMessage(
           tabs[0].id, 
           { 
             action: 'jumpToTimestamp', 
-            timestamp: result.obj.contextStart  // Changed from result.obj.start to result.obj.contextStart
+            timestamp: result.obj.contextStart
           }
         );
       });
@@ -217,6 +239,17 @@ function performSearch(query, resultsList) {
     
     resultsList.appendChild(item);
   });
+}
+
+// Sort results based on the selected sorting method
+function sortResults(results, sortOrder) {
+  if (sortOrder === 'timestamp') {
+    // Sort by timestamp (chronological order)
+    return [...results].sort((a, b) => a.obj.contextStart - b.obj.contextStart);
+  } else {
+    // Default - sort by score (already done by deduplicateResults)
+    return results;
+  }
 }
 
 // Function to deduplicate search results based on context overlap

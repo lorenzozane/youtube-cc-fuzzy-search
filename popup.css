@@ -27,11 +27,16 @@ h2 {
   color: #c00000;
 }
 
+.search-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
 #search-input {
-  width: 100%;
+  flex: 1;
   padding: 8px;
   box-sizing: border-box;
-  margin-bottom: 10px;
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 14px;
@@ -41,6 +46,35 @@ h2 {
   outline: none;
   border-color: #c00000;
   box-shadow: 0 0 3px rgba(204, 0, 0, 0.3);
+}
+
+.sort-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background-color: white;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.sort-toggle:hover {
+  border-color: #c00000;
+  background-color: #fff8f8;
+}
+
+sort-toggle:active {
+  background-color: #ffe8e8;
+}
+
+.sort-toggle svg {
+  height: 14px;
+  width: 14px;
+  color: #666;
 }
 
 #results-container {
@@ -123,5 +157,10 @@ h2 {
 
 /* Remove old score style that's no longer needed */
 .score {
+  display: none;
+}
+
+/* Remove old sort container styles that are no longer needed */
+.sort-container {
   display: none;
 }

@@ -10,7 +10,19 @@
     <h2>YouTube CC Search</h2>
     <div id="status" class="message">Loading...</div>
     <div id="search-container" style="display:none;">
-      <input type="text" id="search-input" placeholder="Search in captions...">
+      <div class="search-controls">
+        <input type="text" id="search-input" placeholder="Search in captions...">
+        <button id="sort-toggle" class="sort-toggle" title="Toggle sort order">
+          <span id="sort-text">Score</span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 5h10"></path>
+            <path d="M11 9h7"></path>
+            <path d="M11 13h4"></path>
+            <path d="M3 17l3 3 3-3"></path>
+            <path d="M6 18V4"></path>
+          </svg>
+        </button>
+      </div>
       <div id="results-container">
         <div id="results-list"></div>
       </div>
