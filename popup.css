@@ -71,7 +71,7 @@ h2 {
   align-items: center;
   justify-content: center;
   color: var(--primary-color);
-  transition: background-color 0.2s;
+  transition: background-color 0.3s;
   position: absolute;
   right: 0;
 }
@@ -123,6 +123,7 @@ h2 {
   font-size: 14px;
   background-color: var(--input-bg);
   color: var(--text-color);
+  transition: all 0.3s;
 }
 
 #search-input:focus {
@@ -142,7 +143,7 @@ h2 {
   color: var(--text-color);
   font-size: 12px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.3s;
   white-space: nowrap;
 }
 
@@ -191,7 +192,7 @@ h2 {
   padding: 10px;
   border-bottom: 1px solid var(--border-color);
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: background-color 0.3s;
   display: flex;
   align-items: flex-start;
 }
@@ -246,12 +247,3 @@ h2 {
   white-space: pre-line;
 }
 
-/* Remove old score style that's no longer needed */
-.score {
-  display: none;
-}
-
-/* Remove old sort container styles that are no longer needed */
-.sort-container {
-  display: none;
-}
