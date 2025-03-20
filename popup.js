@@ -16,8 +16,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const sortText = document.getElementById('sort-text');
   const themeToggle = document.getElementById('theme-toggle');
   
-  // Initialize theme from storage
-  initializeTheme();
+  // Initialize theme and sort order from storage
+  await initializePreferences(sortText);
   
   // Set up theme toggle
   themeToggle.addEventListener('click', toggleTheme);
@@ -55,6 +55,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Update the button text
       sortText.textContent = currentSortOrder.charAt(0).toUpperCase() + currentSortOrder.slice(1);
       
+      // Save the sort order preference
+      saveSortOrder(currentSortOrder);
+      
       const searchTerm = searchInput.value.trim();
       
       if (searchTerm.length < 2) {
@@ -70,17 +73,26 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
-// Get theme from storage and apply it
-async function initializeTheme() {
+// Get theme and sort order from storage and apply them
+async function initializePreferences(sortText) {
   try {
-    const result = await chrome.storage.local.get('theme');
+    const result = await chrome.storage.local.get(['theme', 'sortOrder']);
+    
+    // Initialize theme
     currentTheme = result.theme || 'light';
     applyTheme(currentTheme);
     document.documentElement.setAttribute('data-theme', currentTheme);
+    
+    // Initialize sort order
+    currentSortOrder = result.sortOrder || 'score';
+    if (sortText) {
+      sortText.textContent = currentSortOrder.charAt(0).toUpperCase() + currentSortOrder.slice(1);
+    }
   } catch (error) {
-    console.error('Error initializing theme:', error);
-    // Default to light theme if there's an error
+    console.error('Error initializing preferences:', error);
+    // Default to light theme and score sort if there's an error
     currentTheme = 'light';
+    currentSortOrder = 'score';
     applyTheme('light');
   }
 }
@@ -103,6 +115,15 @@ async function saveTheme(theme) {
     await chrome.storage.local.set({ theme: theme });
   } catch (error) {
     console.error('Error saving theme:', error);
+  }
+}
+
+// Save sort order preference to storage
+async function saveSortOrder(sortOrder) {
+  try {
+    await chrome.storage.local.set({ sortOrder: sortOrder });
+  } catch (error) {
+    console.error('Error saving sort order:', error);
   }
 }
 
