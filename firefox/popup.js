@@ -159,8 +159,11 @@ function requestCaptions(tabId, statusDiv, searchContainer, searchInput) {
       return;
     }
     
-    // Show search interface
-    statusDiv.innerHTML = `Loaded captions for: <b>${response.videoTitle}</b>`;
+    // Show search interface - using DOM manipulation instead of innerHTML
+    statusDiv.textContent = 'Loaded captions for: ';
+    const boldElement = document.createElement('b');
+    boldElement.textContent = response.videoTitle;
+    statusDiv.appendChild(boldElement);
     statusDiv.className = 'message success';
     searchContainer.style.display = 'block';
     searchInput.focus();
@@ -256,7 +259,11 @@ function performSearch(query, resultsList, sortOrder = 'score') {
   resultsList.innerHTML = '';
   
   if (sortedResults.length === 0) {
-    resultsList.innerHTML = '<div class="message">No matches found</div>';
+    // Replace innerHTML with DOM manipulation
+    const noResultsMessage = document.createElement('div');
+    noResultsMessage.className = 'message';
+    noResultsMessage.textContent = 'No matches found';
+    resultsList.appendChild(noResultsMessage);
     return;
   }
   
@@ -274,15 +281,49 @@ function performSearch(query, resultsList, sortOrder = 'score') {
     // Format score to 2 decimal places
     const score = result.score.toFixed(2);
     
-    item.innerHTML = `
-      <div class="result-left">
-        <div class="timestamp">${timestamp}</div>
-        <div class="timestamp">${endingTimestamp}</div>
-        <div class="score-label">Match</div>
-        <span class="score-value">${score}</span>
-      </div>
-      <span class="caption-text">${highlightedText || result.obj.text}</span>
-    `;
+    // Create DOM structure instead of using innerHTML
+    const resultLeftDiv = document.createElement('div');
+    resultLeftDiv.className = 'result-left';
+    
+    const timestampStartDiv = document.createElement('div');
+    timestampStartDiv.className = 'timestamp';
+    timestampStartDiv.textContent = timestamp;
+    resultLeftDiv.appendChild(timestampStartDiv);
+    
+    const timestampEndDiv = document.createElement('div');
+    timestampEndDiv.className = 'timestamp';
+    timestampEndDiv.textContent = endingTimestamp;
+    resultLeftDiv.appendChild(timestampEndDiv);
+    
+    const scoreLabelDiv = document.createElement('div');
+    scoreLabelDiv.className = 'score-label';
+    scoreLabelDiv.textContent = 'Match';
+    resultLeftDiv.appendChild(scoreLabelDiv);
+    
+    const scoreValueSpan = document.createElement('span');
+    scoreValueSpan.className = 'score-value';
+    scoreValueSpan.textContent = score;
+    resultLeftDiv.appendChild(scoreValueSpan);
+    
+    item.appendChild(resultLeftDiv);
+    
+    const captionTextSpan = document.createElement('span');
+    captionTextSpan.className = 'caption-text';
+    
+    // Handle highlighted text differently
+    if (highlightedText) {
+      // Create a container to safely set the highlighted HTML
+      const tempContainer = document.createElement('div');
+      tempContainer.innerHTML = highlightedText;
+      // Move all children from the temp container to the actual caption text span
+      while (tempContainer.firstChild) {
+        captionTextSpan.appendChild(tempContainer.firstChild);
+      }
+    } else {
+      captionTextSpan.textContent = result.obj.text;
+    }
+    
+    item.appendChild(captionTextSpan);
     
     // Add click event to jump to that timestamp in the video
     item.addEventListener('click', () => {
