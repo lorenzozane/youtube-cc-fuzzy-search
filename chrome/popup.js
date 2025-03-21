@@ -317,11 +317,13 @@ function performSearch(query, resultsList, sortOrder = 'score') {
     
     // Handle highlighted text differently
     if (highlightedText) {
-      // Create a container to safely set the highlighted HTML
-      const tempContainer = document.createElement('div');
-      tempContainer.innerHTML = highlightedText;
-      // Move all children from the temp container to the actual caption text span
-      while (tempContainer.firstChild) {
+      // Create a safer way to handle the HTML highlighting
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(`<div>${highlightedText}</div>`, 'text/html');
+      const tempContainer = doc.body.firstChild;
+      
+      // Move all children from the parsed container to the actual caption text span
+      while (tempContainer && tempContainer.firstChild) { 
         captionTextSpan.appendChild(tempContainer.firstChild);
       }
     } else {
