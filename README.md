@@ -3,7 +3,8 @@ YouTube CC Fuzzy Search
 </h1>
 
 <p align="center">
-<a href="https://chromewebstore.google.com/detail/youtube-cc-fuzzy-search/mgendgdloioichnbdggieldkibmkdkjp"><img src="https://github.com/user-attachments/assets/b8cc71d2-a47c-4d48-9da5-fd1203362a4f" width="206" height="58"></a>
+<a href="https://chromewebstore.google.com/detail/youtube-cc-fuzzy-search/mgendgdloioichnbdggieldkibmkdkjp"><img src="https://github.com/user-attachments/assets/b8cc71d2-a47c-4d48-9da5-fd1203362a4f" width="206" height="58" alt="Get YouTube CC Fuzzy Search for Chrome"></a>
+<a href="https://addons.mozilla.org/firefox/addon/youtube-cc-fuzzy-search/"><img src="https://github.com/user-attachments/assets/6fd35390-5b9f-441a-ba6a-e1a90b4d540b" width="206" height="58" alt="Get YouTube CC Fuzzy Search for Firefox"></a>
 </p>
 
 ***
@@ -25,16 +26,24 @@ A browser extension that enables fuzzy search through YouTube video subtitles (C
 ### Chromium
 [Chrome Web Store][Chrome]
 
-### Firefox
-*Coming soon*
+### Firefox (Gecko)
+[Firefox Add-ons][Firefox]
 
 ### Manual Installation
 
-1. Download this repository
-2. Open Chrome and navigate to the extensions page
-3. Enable "Developer mode"
-4. Choose "Load unpacked" (Chrome)
-5. Select the directory containing the extension files
+#### Chrome / Edge / Chromium-based browsers
+1. Download this repository as ZIP and extract it
+2. Open Chrome and navigate to `chrome://extensions/`
+3. Enable "Developer mode" using the toggle in the top-right corner
+4. Click "Load unpacked" button in the top-left
+5. Select the `chrome` directory from the extracted files
+
+#### Firefox / Zen
+1. Download this repository as ZIP and extract it
+2. Navigate inside of the `firefox` folder and ZIP all the files in there
+2. Open Firefox and navigate to `about:addons`
+3. Click "Install add-on from file" using the settings icon on the top-right
+4. Navigate to the `firefox` folder and select the ZIP file created earlier
 
 ## Contribution
 
@@ -56,4 +65,5 @@ The fuzzy search is powered by [fuzzysort](https://github.com/farzher/fuzzysort)
 
 <!-------------------------------------------------->
 [Chrome]: https://chromewebstore.google.com/detail/youtube-cc-fuzzy-search/mgendgdloioichnbdggieldkibmkdkjp
+[Firefox]: https://addons.mozilla.org/firefox/addon/youtube-cc-fuzzy-search/
 [GitHub Issues]: https://github.com/lorenzozane/youtube-cc-fuzzy-search/issues
