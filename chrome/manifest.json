@@ -32,5 +32,14 @@
     "gecko": {
       "id": "youtube-cc-fuzzy-search@lorenzozane.dev"
     }
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+U",
+        "mac": "Command+Shift+U"
+      },
+      "description": "Open YouTube CC Fuzzy Search"
+    }
   }
 }
