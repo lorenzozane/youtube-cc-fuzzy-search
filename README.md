@@ -19,6 +19,7 @@ A browser extension that enables fuzzy search through YouTube video subtitles (C
 ## Feature Roadmap
 - [x] Custom ordering
 - [x] Dark mode
+- [x] Shortcut to open extension (Ctrl+Shift+U)
 - [ ] Add settings for parameters
 
 ## Installation
