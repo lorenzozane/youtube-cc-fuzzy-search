@@ -1,3 +1,6 @@
+> [!WARNING]  
+> **Archived**: As of July 2025, YouTube no longer provides transcripts through any publicly accessible or legitimate means. This extension is currently non-functional and has been archived. It may be unarchived in the future if legitimate access to transcripts becomes available again.
+
 <h1 align="center">
 YouTube CC Fuzzy Search
 </h1>
