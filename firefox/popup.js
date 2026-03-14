@@ -202,7 +202,10 @@ function bootstrapContentScriptAndRetry(tabId, statusDiv, searchContainer, searc
 }
 
 function renderTranscriptList(resultsList, transcriptSubtitles) {
-  resultsList.innerHTML = '';
+  // Remove all children safely instead of using innerHTML
+  while (resultsList.firstChild) {
+    resultsList.removeChild(resultsList.firstChild);
+  }
 
   if (!Array.isArray(transcriptSubtitles) || transcriptSubtitles.length === 0) {
     const noTranscriptMessage = document.createElement('div');
@@ -278,7 +281,10 @@ function performSearch(query, resultsList, sortOrder = 'score') {
   const sortedResults = sortResults(deduplicatedResults, sortOrder);
   
   // Display results
-  resultsList.innerHTML = '';
+  // Remove all children safely instead of using innerHTML
+  while (resultsList.firstChild) {
+    resultsList.removeChild(resultsList.firstChild);
+  }
   
   if (sortedResults.length === 0) {
     // Replace innerHTML with DOM manipulation

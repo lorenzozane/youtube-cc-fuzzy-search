@@ -62,6 +62,7 @@ When contributing code, please maintain the vanilla structure of the project wit
 
 ## Acknowledgements
 Closed captions are gathered and parsed using [defuddle](https://github.com/kepano/defuddle), a JavaScript library for extracting subtitles from YouTube.
+
 The fuzzy search is powered by [fuzzysort](https://github.com/farzher/fuzzysort), a fast and powerful JavaScript fuzzy search library.
 
 
