@@ -5,6 +5,8 @@ let messageListener = null;
 let transcriptMarkdown = '';
 let transcriptDocumentMarkdown = '';
 let transcriptMetadata = {};
+let fetchCaptionsPromise = null;
+let transcriptError = null;
 
 function getVideoId() {
   const urlParams = new URLSearchParams(window.location.search);
@@ -110,6 +112,11 @@ function buildTranscriptDocumentMarkdown(metadata, transcript, sourceUrl) {
 }
 
 async function fetchCaptions() {
+  if (fetchCaptionsPromise) {
+    return fetchCaptionsPromise;
+  }
+
+  fetchCaptionsPromise = (async () => {
   try {
     if (subtitles.length > 0 && transcriptDocumentMarkdown) {
       return;
@@ -128,6 +135,7 @@ async function fetchCaptions() {
       throw new Error('Defuddle did not return transcript data');
     }
 
+    transcriptError = null;
     transcriptMarkdown = defuddled.variables?.transcript || '';
     subtitles = parseTranscriptMarkdown(transcriptMarkdown);
 
@@ -149,16 +157,20 @@ async function fetchCaptions() {
     );
 
     console.log(`YouTube CC Search: Loaded ${subtitles.length} transcript segments from Defuddle`);
-
-    setupMessageListener();
     isInitialized = true;
   } catch (error) {
     console.error('Error fetching captions:', error);
     isInitialized = true;
-    const errorMessage = /Defuddle is not defined/i.test(error?.message || '')
+    transcriptError = /Defuddle is not defined/i.test(error?.message || '')
       ? 'Transcriptions were not available, or the extension was not able to fetch them.'
       : (error?.message || 'Transcriptions were not available, or the extension was not able to fetch them.');
-    setupMessageListener(errorMessage);
+  }
+  })();
+
+  try {
+    await fetchCaptionsPromise;
+  } finally {
+    fetchCaptionsPromise = null;
   }
 }
 
@@ -172,12 +184,19 @@ function setupMessageListener(errorMessage = null) {
   // Create a new listener
   messageListener = function(message, sender, sendResponse) {
     if (message.action === 'getCaptions') {
-      if (errorMessage) {
-        sendResponse({ 
-          success: false, 
-          error: errorMessage
-        });
-      } else {
+      (async () => {
+        if (!isInitialized) {
+          await fetchCaptions();
+        }
+
+        if (transcriptError || errorMessage) {
+          sendResponse({
+            success: false,
+            error: transcriptError || errorMessage
+          });
+          return;
+        }
+
         sendResponse({
           success: true,
           subtitles,
@@ -187,7 +206,13 @@ function setupMessageListener(errorMessage = null) {
           transcriptDocumentMarkdown,
           transcriptMetadata
         });
-      }
+      })().catch((error) => {
+        console.error('Error handling getCaptions message:', error);
+        sendResponse({
+          success: false,
+          error: 'Transcriptions were not available, or the extension was not able to fetch them.'
+        });
+      });
     } else if (message.action === 'jumpToTimestamp' && message.timestamp) {
       const video = document.querySelector('video');
       if (video) {
@@ -244,6 +269,7 @@ setInterval(() => {
     transcriptMarkdown = '';
     transcriptDocumentMarkdown = '';
     transcriptMetadata = {};
+    transcriptError = null;
     isInitialized = false; // Reset initialization flag
     setTimeout(initializeExtension, 1500);
   }
