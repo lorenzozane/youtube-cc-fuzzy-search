@@ -2,148 +2,159 @@ let subtitles = [];
 let videoId = '';
 let isInitialized = false;
 let messageListener = null;
+let transcriptMarkdown = '';
+let transcriptDocumentMarkdown = '';
+let transcriptMetadata = {};
 
-// Extract video ID from URL
 function getVideoId() {
   const urlParams = new URLSearchParams(window.location.search);
   return urlParams.get('v');
 }
 
-// Format time from seconds to MM:SS
 function formatTime(seconds) {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  const hours = Math.floor(total / 3600);
+  const mins = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+
+  if (hours > 0) {
+    return `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-// Parse the XML captions to text with timestamps
-function parseCaptions(xmlString) {
-  const parser = new DOMParser();
-  const xmlDoc = parser.parseFromString(xmlString, "text/xml");
-  const textElements = xmlDoc.getElementsByTagName('text');
-  
-  const captionsArray = [];
-  
-  for (let i = 0; i < textElements.length; i++) {
-    const element = textElements[i];
-    const text = element.textContent.trim();
-    const start = parseFloat(element.getAttribute('start'));
-    const duration = parseFloat(element.getAttribute('dur') || "0");
-    
-    if (text) {
-      captionsArray.push({
-        text: cleanCaptionText(text),
-        start,
-        end: start + duration,
-        timestamp: formatTime(start)
-      });
-    }
+function parseTimestamp(timestampText) {
+  const parts = timestampText.split(':').map(Number);
+  if (parts.some(Number.isNaN)) {
+    return null;
   }
-  
-  return captionsArray;
-}
 
-// Clean up caption text by removing extra spaces, HTML entities, etc.
-function cleanCaptionText(text) {
-  return text
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-// Get captions URL from YouTube player
-async function getCaptionsUrl() {
-  try {
-    videoId = getVideoId();
-    if (!videoId) throw new Error('Video ID not found');
-    
-    // First try to get captions from the player API
-    try {
-      // Use a shorter timeout for fetch to avoid hanging
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-      
-      const playerResponse = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-      
-      const html = await playerResponse.text();
-      
-      // Look for captions in the page source
-      const captionMatch = html.match(/"captionTracks":\[(.*?)\]/);
-      if (captionMatch) {
-        const captionData = JSON.parse(`[${captionMatch[1]}]`);
-        
-        // First try to find English captions
-        let caption = captionData.find(c => 
-          c.languageCode === 'en' || 
-          c.vssId?.indexOf('.en') > 0
-        );
-        
-        // If no English captions, try auto-generated ones
-        if (!caption) {
-          caption = captionData.find(c => c.kind === 'asr');
-        }
-        
-        // If still no captions, take the first available one
-        if (!caption && captionData.length > 0) {
-          caption = captionData[0];
-        }
-        
-        if (caption && caption.baseUrl) return caption.baseUrl;
-      }
-      
-      throw new Error('No caption tracks found in player response');
-    } catch (error) {
-      console.warn('Error getting captions from player API:', error);
-      
-      // Fall back to caption API
-      return `https://www.youtube.com/api/timedtext?lang=en&v=${videoId}`;
-    }
-  } catch (error) {
-    console.error('Error getting captions URL:', error);
-    throw error;
+  if (parts.length === 2) {
+    return parts[0] * 60 + parts[1];
   }
+
+  if (parts.length === 3) {
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+
+  return null;
 }
 
-// Fetch the captions for the current video
+function parseTranscriptMarkdown(markdownText) {
+  const lines = (markdownText || '').split(/\r?\n/);
+  const parsed = [];
+  let currentSection = '';
+
+  for (const line of lines) {
+    const sectionMatch = line.match(/^###\s+(.+)$/);
+    if (sectionMatch) {
+      currentSection = sectionMatch[1].trim();
+      continue;
+    }
+
+    const transcriptMatch = line.match(/^\*\*(\d{1,2}:\d{2}(?::\d{2})?)\*\*\s*·\s*(.+)$/);
+    if (!transcriptMatch) {
+      continue;
+    }
+
+    const timestamp = transcriptMatch[1];
+    const start = parseTimestamp(timestamp);
+    if (start === null) {
+      continue;
+    }
+
+    parsed.push({
+      text: transcriptMatch[2].trim(),
+      start,
+      end: start + 2,
+      timestamp,
+      section: currentSection
+    });
+  }
+
+  for (let i = 0; i < parsed.length; i++) {
+    const current = parsed[i];
+    const next = parsed[i + 1];
+    if (!next) {
+      break;
+    }
+    current.end = Math.max(current.start + 1, next.start);
+  }
+
+  return parsed;
+}
+
+function escapeYamlString(value) {
+  return String(value ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function buildTranscriptDocumentMarkdown(metadata, transcript, sourceUrl) {
+  const frontmatter = [
+    '---',
+    `title: "${escapeYamlString(metadata.title || '')}"`,
+    `author: "${escapeYamlString(metadata.author || '')}"`,
+    `published: ${metadata.published || ''}`,
+    `source: "${escapeYamlString(sourceUrl)}"`,
+    `domain: "${escapeYamlString(metadata.domain || '')}"`,
+    `language: "${escapeYamlString(metadata.language || '')}"`,
+    `description: "${escapeYamlString(metadata.description || '')}"`,
+    `word_count: ${Number(metadata.word_count) || 0}`,
+    '---',
+    `![](${sourceUrl})`,
+    '## Transcript',
+    transcript || ''
+  ];
+
+  return frontmatter.join('\n');
+}
+
 async function fetchCaptions() {
   try {
-    // Check if we're already in the process of fetching
-    if (subtitles.length > 0) {
+    if (subtitles.length > 0 && transcriptDocumentMarkdown) {
       return;
     }
-    
-    const captionsUrl = await getCaptionsUrl();
-    
-    // Use a shorter timeout for fetch to avoid hanging
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    
-    const response = await fetch(captionsUrl, {
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch captions: ${response.status} ${response.statusText}`);
+
+    videoId = getVideoId();
+    if (!videoId) {
+      throw new Error('Video ID not found');
     }
-    
-    const captionsXml = await response.text();
-    subtitles = parseCaptions(captionsXml);
-    console.log(`YouTube CC Search: Loaded ${subtitles.length} captions`);
-    
+
+    const source = document.URL;
+    const defuddle = new Defuddle(document, { url: source });
+    const defuddled = await defuddle.parseAsync();
+
+    if (!defuddled) {
+      throw new Error('Defuddle did not return transcript data');
+    }
+
+    transcriptMarkdown = defuddled.variables?.transcript || '';
+    subtitles = parseTranscriptMarkdown(transcriptMarkdown);
+
+    transcriptMetadata = {
+      title: defuddled.title || document.title.replace(' - YouTube', ''),
+      author: defuddled.author || '',
+      published: defuddled.published || '',
+      domain: defuddled.domain || 'youtube.com',
+      language: defuddled.language || 'en',
+      description: defuddled.description || '',
+      word_count: defuddled.wordCount || 0,
+      source
+    };
+
+    transcriptDocumentMarkdown = buildTranscriptDocumentMarkdown(
+      transcriptMetadata,
+      transcriptMarkdown,
+      source
+    );
+
+    console.log(`YouTube CC Search: Loaded ${subtitles.length} transcript segments from Defuddle`);
+
     setupMessageListener();
     isInitialized = true;
-    
   } catch (error) {
     console.error('Error fetching captions:', error);
-    isInitialized = true; // Mark as initialized even if there's an error
+    isInitialized = true;
     setupMessageListener(error.message);
   }
 }
@@ -164,11 +175,14 @@ function setupMessageListener(errorMessage = null) {
           error: errorMessage
         });
       } else {
-        return Promise.resolve({ 
-          success: true, 
-          subtitles, 
-          videoTitle: document.title.replace(' - YouTube', ''),
-          videoId
+        return Promise.resolve({
+          success: true,
+          subtitles,
+          videoTitle: transcriptMetadata.title || document.title.replace(' - YouTube', ''),
+          videoId,
+          transcriptMarkdown,
+          transcriptDocumentMarkdown,
+          transcriptMetadata
         });
       }
     } else if (message.action === 'jumpToTimestamp' && message.timestamp) {
@@ -222,6 +236,9 @@ setInterval(() => {
     console.log('YouTube CC Search: Video changed, reinitializing');
     lastVideoId = currentVideoId;
     subtitles = []; // Clear existing subtitles
+    transcriptMarkdown = '';
+    transcriptDocumentMarkdown = '';
+    transcriptMetadata = {};
     isInitialized = false; // Reset initialization flag
     setTimeout(initializeExtension, 1500);
   }

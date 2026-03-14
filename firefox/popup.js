@@ -3,6 +3,9 @@ let currentVideoId = '';
 let retryCount = 0;
 let currentSortOrder = 'score'; // Default sort order
 let currentTheme = 'light'; // Default theme
+let transcriptMarkdown = '';
+let transcriptDocumentMarkdown = '';
+let transcriptMetadata = {};
 const MAX_RETRIES = 5;
 const RETRY_INTERVAL = 2000; // 2 seconds
 
@@ -40,7 +43,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const searchTerm = searchInput.value.trim();
       
       if (searchTerm.length < 2) {
-        resultsList.innerHTML = '';
+        renderTranscriptList(resultsList, subtitles);
         return;
       }
       
@@ -61,6 +64,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const searchTerm = searchInput.value.trim();
       
       if (searchTerm.length < 2) {
+        renderTranscriptList(resultsList, subtitles);
         return;
       }
       
@@ -152,6 +156,9 @@ function requestCaptions(tabId, statusDiv, searchContainer, searchInput) {
     
     subtitles = response.subtitles;
     currentVideoId = response.videoId;
+    transcriptMarkdown = response.transcriptMarkdown || '';
+    transcriptDocumentMarkdown = response.transcriptDocumentMarkdown || '';
+    transcriptMetadata = response.transcriptMetadata || {};
     retryCount = 0; // Reset retry count on success
     
     if (subtitles.length === 0) {
@@ -166,10 +173,67 @@ function requestCaptions(tabId, statusDiv, searchContainer, searchInput) {
     statusDiv.appendChild(boldElement);
     statusDiv.className = 'message success';
     searchContainer.style.display = 'block';
+    renderTranscriptList(resultsList, subtitles);
     searchInput.focus();
   }).catch(error => {
     console.error(error);
     injectContentScriptAndRetry(tabId, statusDiv, searchContainer, searchInput);
+  });
+}
+
+function renderTranscriptList(resultsList, transcriptSubtitles) {
+  resultsList.innerHTML = '';
+
+  if (!Array.isArray(transcriptSubtitles) || transcriptSubtitles.length === 0) {
+    const noTranscriptMessage = document.createElement('div');
+    noTranscriptMessage.className = 'message';
+    noTranscriptMessage.textContent = 'Transcript not available.';
+    resultsList.appendChild(noTranscriptMessage);
+    return;
+  }
+
+  let lastSection = '';
+
+  transcriptSubtitles.forEach((segment) => {
+    if (segment.section && segment.section !== lastSection) {
+      lastSection = segment.section;
+      const sectionHeader = document.createElement('div');
+      sectionHeader.className = 'transcript-heading';
+      sectionHeader.textContent = segment.section;
+      resultsList.appendChild(sectionHeader);
+    }
+
+    const item = document.createElement('div');
+    item.className = 'result-item';
+
+    const resultLeftDiv = document.createElement('div');
+    resultLeftDiv.className = 'result-left';
+
+    const timestampStartDiv = document.createElement('div');
+    timestampStartDiv.className = 'timestamp';
+    timestampStartDiv.textContent = segment.timestamp || formatTime(segment.start);
+    resultLeftDiv.appendChild(timestampStartDiv);
+
+    item.appendChild(resultLeftDiv);
+
+    const captionTextSpan = document.createElement('span');
+    captionTextSpan.className = 'caption-text';
+    captionTextSpan.textContent = segment.text;
+    item.appendChild(captionTextSpan);
+
+    item.addEventListener('click', () => {
+      browser.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        browser.tabs.sendMessage(
+          tabs[0].id,
+          {
+            action: 'jumpToTimestamp',
+            timestamp: segment.start
+          }
+        );
+      });
+    });
+
+    resultsList.appendChild(item);
   });
 }
 

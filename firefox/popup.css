@@ -209,6 +209,15 @@ h2 {
   background-color: var(--result-hover);
 }
 
+.transcript-heading {
+  padding: 8px 10px 4px 10px;
+  font-size: var(--font-size-small);
+  font-weight: 700;
+  color: var(--primary-color);
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--primary-hover);
+}
+
 .result-left {
   min-width: 30px;
   width: 30px;

@@ -19,7 +19,7 @@
   "content_scripts": [
     {
       "matches": ["*://*.youtube.com/watch?*"],
-      "js": ["content.js"],
+      "js": ["defuddle.js", "content.js"],
       "run_at": "document_end"
     }
   ],
