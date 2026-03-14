@@ -159,12 +159,13 @@ function requestCaptions(tabId, statusDiv, searchContainer, searchInput) {
     transcriptMarkdown = response.transcriptMarkdown || '';
     transcriptDocumentMarkdown = response.transcriptDocumentMarkdown || '';
     transcriptMetadata = response.transcriptMetadata || {};
-    retryCount = 0; // Reset retry count on success
     
     if (subtitles.length === 0) {
       handleEmptyCaptions(tabId, statusDiv, searchContainer, searchInput);
       return;
     }
+
+    retryCount = 0; // Reset retry count only after real successful transcript load
     
     // Show search interface - using DOM manipulation instead of innerHTML
     statusDiv.textContent = 'Loaded captions for: ';
@@ -177,6 +178,14 @@ function requestCaptions(tabId, statusDiv, searchContainer, searchInput) {
     searchInput.focus();
   }).catch(error => {
     console.error(error);
+    if (retryCount >= MAX_RETRIES) {
+      statusDiv.textContent = 'Transcriptions were not available, or the extension was not able to fetch them.';
+      statusDiv.className = 'message error';
+      retryCount = 0;
+      return;
+    }
+
+    retryCount++;
     injectContentScriptAndRetry(tabId, statusDiv, searchContainer, searchInput);
   });
 }
@@ -249,7 +258,7 @@ function handleEmptyCaptions(tabId, statusDiv, searchContainer, searchInput) {
       requestCaptions(tabId, statusDiv, searchContainer, searchInput);
     }, RETRY_INTERVAL);
   } else {
-    statusDiv.textContent = 'No captions found after multiple attempts.\r\nThe video may not have captions available.\r\n\r\nIf the video has captions, click outside the extension and reopen it.';
+    statusDiv.textContent = 'Transcriptions were not available, or the extension was not able to fetch them.';
     statusDiv.className = 'message error';
     retryCount = 0;
   }
@@ -267,7 +276,7 @@ function handleCaptionError(tabId, statusDiv, searchContainer, searchInput, resp
       requestCaptions(tabId, statusDiv, searchContainer, searchInput);
     }, RETRY_INTERVAL);
   } else {
-    statusDiv.textContent = `Error: ${response.error || 'This video may not have captions available.'}`;
+    statusDiv.textContent = 'Transcriptions were not available, or the extension was not able to fetch them.';
     statusDiv.className = 'message error';
     retryCount = 0;
   }
@@ -278,10 +287,10 @@ function injectContentScriptAndRetry(tabId, statusDiv, searchContainer, searchIn
   statusDiv.textContent = 'Initializing extension...';
   statusDiv.className = 'message loading';
   
-  // Inject content script
+  // Inject dependencies in order: Defuddle first, then content script.
   browser.scripting.executeScript({
     target: { tabId: tabId },
-    files: ['content.js']
+    files: ['defuddle.js', 'content.js']
   })
   .then(() => {
     // Wait a moment for content script to initialize

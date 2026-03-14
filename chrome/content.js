@@ -155,7 +155,10 @@ async function fetchCaptions() {
   } catch (error) {
     console.error('Error fetching captions:', error);
     isInitialized = true;
-    setupMessageListener(error.message);
+    const errorMessage = /Defuddle is not defined/i.test(error?.message || '')
+      ? 'Transcriptions were not available, or the extension was not able to fetch them.'
+      : (error?.message || 'Transcriptions were not available, or the extension was not able to fetch them.');
+    setupMessageListener(errorMessage);
   }
 }
 
