@@ -11,10 +11,12 @@ YouTube CC Fuzzy Search
 
 A browser extension that enables fuzzy search through YouTube video subtitles (Closed Captions).
 
-- The **Fuzzy Search** find words and phrases in video captions even with typos or partial matches
-- Clicking on search results te video automatically **Jump to Timestamp** 
+
+- Uses [defuddle](https://github.com/kepano/defuddle) to gather and parse YouTube Closed Captions (subtitles) directly from videos
+- The **Fuzzy Search** finds words and phrases in video captions even with typos or partial matches
+- Clicking on search results lets the video automatically **Jump to Timestamp**
 - Search results are shown with surrounding **Caption Context** for better understanding
-- **Real-time Search** update results as you type with minimal delay
+- **Real-time Search** updates results as you type with minimal delay
 
 ## Feature Roadmap
 - [x] Custom ordering
@@ -59,7 +61,7 @@ Any kind of contributions are welcomed!
 When contributing code, please maintain the vanilla structure of the project without introducing additional frameworks or unnecessary dependencies.
 
 ## Acknowledgements
-
+Closed captions are gathered and parsed using [defuddle](https://github.com/kepano/defuddle), a JavaScript library for extracting subtitles from YouTube.
 The fuzzy search is powered by [fuzzysort](https://github.com/farzher/fuzzysort), a fast and powerful JavaScript fuzzy search library.
 
 
