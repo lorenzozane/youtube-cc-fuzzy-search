@@ -47,33 +47,59 @@ function parseTranscriptMarkdown(markdownText) {
   const lines = (markdownText || '').split(/\r?\n/);
   const parsed = [];
   let currentSection = '';
+  let currentCaption = null;
+
+  const flushCurrentCaption = () => {
+    if (!currentCaption) {
+      return;
+    }
+
+    parsed.push(currentCaption);
+    currentCaption = null;
+  };
 
   for (const line of lines) {
     const sectionMatch = line.match(/^###\s+(.+)$/);
     if (sectionMatch) {
+      flushCurrentCaption();
       currentSection = sectionMatch[1].trim();
       continue;
     }
 
     const transcriptMatch = line.match(/^\*\*(\d{1,2}:\d{2}(?::\d{2})?)\*\*\s*·\s*(.+)$/);
-    if (!transcriptMatch) {
+    if (transcriptMatch) {
+      flushCurrentCaption();
+
+      const timestamp = transcriptMatch[1];
+      const start = parseTimestamp(timestamp);
+      if (start === null) {
+        continue;
+      }
+
+      currentCaption = {
+        text: transcriptMatch[2].trim(),
+        start,
+        end: start + 2,
+        timestamp,
+        section: currentSection
+      };
+
       continue;
     }
 
-    const timestamp = transcriptMatch[1];
-    const start = parseTimestamp(timestamp);
-    if (start === null) {
+    if (!currentCaption) {
       continue;
     }
 
-    parsed.push({
-      text: transcriptMatch[2].trim(),
-      start,
-      end: start + 2,
-      timestamp,
-      section: currentSection
-    });
+    const continuation = line.trim();
+    if (!continuation) {
+      continue;
+    }
+
+    currentCaption.text = `${currentCaption.text} ${continuation}`;
   }
+
+  flushCurrentCaption();
 
   for (let i = 0; i < parsed.length; i++) {
     const current = parsed[i];
