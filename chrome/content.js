@@ -1,12 +1,19 @@
+(() => {
+if (globalThis.__ytCCSearchContentLoaded) return;
+globalThis.__ytCCSearchContentLoaded = true;
+
 let subtitles = [];
 let videoId = '';
-let isInitialized = false;
 let messageListener = null;
 let transcriptMarkdown = '';
 let transcriptDocumentMarkdown = '';
 let transcriptMetadata = {};
-let fetchCaptionsPromise = null;
-let transcriptError = null;
+let activeCaptionRequest = null;
+let completedCaptionKey = '';
+let captionRequestVersion = 0;
+
+const CAPTION_RETRY_DELAYS = [0, 1200, 2500];
+const VIDEO_READY_TIMEOUT = 6000;
 
 function getVideoId() {
   const urlParams = new URLSearchParams(window.location.search);
@@ -137,71 +144,136 @@ function buildTranscriptDocumentMarkdown(metadata, transcript, sourceUrl) {
   return frontmatter.join('\n');
 }
 
-async function fetchCaptions() {
-  if (fetchCaptionsPromise) {
-    return fetchCaptionsPromise;
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function videoChanged(targetVideoId, requestVersion) {
+  return getVideoId() !== targetVideoId || requestVersion !== captionRequestVersion;
+}
+
+async function waitForVideoReady(targetVideoId, requestVersion) {
+  const deadline = Date.now() + VIDEO_READY_TIMEOUT;
+
+  while (Date.now() < deadline) {
+    if (videoChanged(targetVideoId, requestVersion)) return false;
+
+    const watch = document.querySelector('ytd-watch-flexy[video-id]');
+    const watchVideoId = watch?.getAttribute('video-id');
+    if (document.readyState !== 'loading' && document.querySelector('video') &&
+        (!watchVideoId || watchVideoId === targetVideoId)) {
+      // Give YouTube a moment to finish replacing player data after navigation.
+      await delay(350);
+      const currentWatchId = document.querySelector('ytd-watch-flexy[video-id]')?.getAttribute('video-id');
+      if (!videoChanged(targetVideoId, requestVersion) &&
+          (!currentWatchId || currentWatchId === targetVideoId)) return true;
+    }
+
+    await delay(250);
   }
 
-  fetchCaptionsPromise = (async () => {
-  try {
-    if (subtitles.length > 0 && transcriptDocumentMarkdown) {
-      return;
+  // Defuddle can still find captions when the video element is slow to appear.
+  const watchVideoId = document.querySelector('ytd-watch-flexy[video-id]')?.getAttribute('video-id');
+  return !videoChanged(targetVideoId, requestVersion) &&
+    (!watchVideoId || watchVideoId === targetVideoId);
+}
+
+function captionResponse() {
+  return {
+    success: true,
+    subtitles,
+    videoTitle: transcriptMetadata.title || document.title.replace(' - YouTube', ''),
+    videoId,
+    transcriptMarkdown,
+    transcriptDocumentMarkdown,
+    transcriptMetadata
+  };
+}
+
+async function loadCaptions(targetVideoId, language, requestVersion) {
+  for (let attempt = 0; attempt < CAPTION_RETRY_DELAYS.length; attempt++) {
+    if (attempt > 0) await delay(CAPTION_RETRY_DELAYS[attempt]);
+    if (videoChanged(targetVideoId, requestVersion)) break;
+    if (!await waitForVideoReady(targetVideoId, requestVersion)) break;
+
+    try {
+      const source = document.URL;
+      const options = { url: source };
+      if (language) options.language = language;
+      const defuddled = await new Defuddle(document, options).parseAsync();
+      if (videoChanged(targetVideoId, requestVersion)) break;
+
+      const markdown = defuddled?.variables?.transcript || '';
+      const parsed = parseTranscriptMarkdown(markdown);
+      if (parsed.length === 0) {
+        console.warn(`YouTube CC Search: No captions on attempt ${attempt + 1}; retrying if possible`);
+        continue;
+      }
+
+      const metadata = {
+        title: defuddled.title || document.title.replace(' - YouTube', ''),
+        author: defuddled.author || '',
+        published: defuddled.published || '',
+        domain: defuddled.domain || 'youtube.com',
+        language: defuddled.language || '',
+        description: defuddled.description || '',
+        word_count: defuddled.wordCount || 0,
+        source
+      };
+
+      subtitles = parsed;
+      videoId = targetVideoId;
+      transcriptMarkdown = markdown;
+      transcriptMetadata = metadata;
+      transcriptDocumentMarkdown = buildTranscriptDocumentMarkdown(metadata, markdown, source);
+      completedCaptionKey = `${targetVideoId}|${language}`;
+      console.log(`YouTube CC Search: Loaded ${subtitles.length} transcript segments from Defuddle`);
+      return captionResponse();
+    } catch (error) {
+      console.warn(`YouTube CC Search: Caption attempt ${attempt + 1} failed`, error);
     }
-
-    videoId = getVideoId();
-    if (!videoId) {
-      throw new Error('Video ID not found');
-    }
-
-    const source = document.URL;
-    const defuddle = new Defuddle(document, { url: source });
-    const defuddled = await defuddle.parseAsync();
-
-    if (!defuddled) {
-      throw new Error('Defuddle did not return transcript data');
-    }
-
-    transcriptError = null;
-    transcriptMarkdown = defuddled.variables?.transcript || '';
-    subtitles = parseTranscriptMarkdown(transcriptMarkdown);
-
-    transcriptMetadata = {
-      title: defuddled.title || document.title.replace(' - YouTube', ''),
-      author: defuddled.author || '',
-      published: defuddled.published || '',
-      domain: defuddled.domain || 'youtube.com',
-      language: defuddled.language || 'en',
-      description: defuddled.description || '',
-      word_count: defuddled.wordCount || 0,
-      source
-    };
-
-    transcriptDocumentMarkdown = buildTranscriptDocumentMarkdown(
-      transcriptMetadata,
-      transcriptMarkdown,
-      source
-    );
-
-    console.log(`YouTube CC Search: Loaded ${subtitles.length} transcript segments from Defuddle`);
-    isInitialized = true;
-  } catch (error) {
-    console.error('Error fetching captions:', error);
-    isInitialized = true;
-    transcriptError = /Defuddle is not defined/i.test(error?.message || '')
-      ? 'Transcriptions were not available, or the extension was not able to fetch them.'
-      : (error?.message || 'Transcriptions were not available, or the extension was not able to fetch them.');
   }
-  })();
 
+  return {
+    success: false,
+    error: getVideoId() !== targetVideoId
+      ? 'The video changed while captions were loading. Please try again.'
+      : 'Could not load captions yet. Please try again.'
+  };
+}
+
+async function fetchCaptions(language = '', force = false) {
+  const targetVideoId = getVideoId();
+  if (!targetVideoId) {
+    return { success: false, error: 'Open a YouTube video to load captions.' };
+  }
+  if (typeof Defuddle !== 'function') {
+    return { success: false, code: 'missing_defuddle', error: 'Caption reader is still initializing.' };
+  }
+
+  const normalizedLanguage = typeof language === 'string' ? language.trim() : '';
+  const key = `${targetVideoId}|${normalizedLanguage}`;
+  if (!force && completedCaptionKey === key && subtitles.length > 0) return captionResponse();
+  if (!force && activeCaptionRequest?.key === key) return activeCaptionRequest.promise;
+
+  const requestVersion = ++captionRequestVersion;
+  completedCaptionKey = '';
+  subtitles = [];
+  transcriptMarkdown = '';
+  transcriptDocumentMarkdown = '';
+  transcriptMetadata = {};
+
+  const promise = loadCaptions(targetVideoId, normalizedLanguage, requestVersion);
+  activeCaptionRequest = { key, promise };
   try {
-    await fetchCaptionsPromise;
+    return await promise;
   } finally {
-    fetchCaptionsPromise = null;
+    if (activeCaptionRequest?.promise === promise) activeCaptionRequest = null;
   }
 }
 
 // Setup message listener to handle extension popup requests
-function setupMessageListener(errorMessage = null) {
+function setupMessageListener() {
   // Remove any existing listener to avoid duplicates
   if (messageListener) {
     chrome.runtime.onMessage.removeListener(messageListener);
@@ -210,33 +282,11 @@ function setupMessageListener(errorMessage = null) {
   // Create a new listener
   messageListener = function(message, sender, sendResponse) {
     if (message.action === 'getCaptions') {
-      (async () => {
-        if (!isInitialized) {
-          await fetchCaptions();
-        }
-
-        if (transcriptError || errorMessage) {
-          sendResponse({
-            success: false,
-            error: transcriptError || errorMessage
-          });
-          return;
-        }
-
-        sendResponse({
-          success: true,
-          subtitles,
-          videoTitle: transcriptMetadata.title || document.title.replace(' - YouTube', ''),
-          videoId,
-          transcriptMarkdown,
-          transcriptDocumentMarkdown,
-          transcriptMetadata
-        });
-      })().catch((error) => {
+      fetchCaptions(message.language, message.force === true).then(sendResponse).catch((error) => {
         console.error('Error handling getCaptions message:', error);
         sendResponse({
           success: false,
-          error: 'Transcriptions were not available, or the extension was not able to fetch them.'
+          error: 'Could not load captions yet. Please try again.'
         });
       });
     } else if (message.action === 'jumpToTimestamp' && message.timestamp) {
@@ -248,7 +298,7 @@ function setupMessageListener(errorMessage = null) {
       sendResponse({ success: true });
     } else if (message.action === 'ping') {
       // Simple ping to check if content script is loaded
-      sendResponse({ success: true, initialized: isInitialized });
+      sendResponse({ success: true, initialized: subtitles.length > 0 });
     }
     
     return true; // Required for async sendResponse
@@ -258,51 +308,9 @@ function setupMessageListener(errorMessage = null) {
   chrome.runtime.onMessage.addListener(messageListener);
 }
 
-// Check if we're on a YouTube video page and initialize
-function initializeExtension() {
-  if (!isInitialized && 
-      window.location.hostname.includes('youtube.com') && 
-      window.location.pathname === '/watch') {
-    console.log('YouTube CC Search: Initializing extension');
-    fetchCaptions();
-  }
-}
-
-// Setup message listener immediately to respond to ping
+// Start loading when the popup requests captions. This avoids caching an early empty result.
 setupMessageListener();
-
-// Initialize on page load
-if (document.readyState === 'loading') {
-  window.addEventListener('load', () => {
-    // Add a slight delay to ensure YouTube's player is fully initialized
-    setTimeout(initializeExtension, 1500);
-  });
-} else {
-  // Document already loaded, initialize with delay
-  setTimeout(initializeExtension, 1500);
-}
-
-// Also re-fetch captions when navigating between videos using YouTube's SPA navigation
-let lastVideoId = getVideoId();
-
-// Watch for URL changes (YouTube uses History API for navigation)
-setInterval(() => {
-  const currentVideoId = getVideoId();
-  if (currentVideoId && currentVideoId !== lastVideoId) {
-    console.log('YouTube CC Search: Video changed, reinitializing');
-    lastVideoId = currentVideoId;
-    subtitles = []; // Clear existing subtitles
-    transcriptMarkdown = '';
-    transcriptDocumentMarkdown = '';
-    transcriptMetadata = {};
-    transcriptError = null;
-    isInitialized = false; // Reset initialization flag
-    setTimeout(initializeExtension, 1500);
-  }
-}, 1000);
-
-// Export a global function that can be called from the page to force initialization
-window.ytCCSearchInit = initializeExtension;
 
 // Inform that content script is loaded
 console.log('YouTube CC Search: Content script loaded');
+})();

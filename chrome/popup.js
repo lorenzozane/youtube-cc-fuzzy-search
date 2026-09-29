@@ -5,6 +5,8 @@ let currentTheme = 'light'; // Default theme
 let transcriptMarkdown = '';
 let transcriptDocumentMarkdown = '';
 let transcriptMetadata = {};
+let currentLanguage = '';
+let captionRequestSequence = 0;
 
 // Initialize popup
 document.addEventListener('DOMContentLoaded', async () => {
@@ -15,12 +17,44 @@ document.addEventListener('DOMContentLoaded', async () => {
   const sortToggle = document.getElementById('sort-toggle');
   const sortText = document.getElementById('sort-text');
   const themeToggle = document.getElementById('theme-toggle');
+  const languageToggle = document.getElementById('language-toggle');
+  const languageMenu = document.getElementById('language-menu');
+  const languageSelect = document.getElementById('language-select');
+  const retryButton = document.getElementById('retry-button');
+  let activeVideoTabId = null;
   
   // Initialize theme and sort order from storage
-  await initializePreferences(sortText);
+  await initializePreferences(sortText, languageSelect);
   
   // Set up theme toggle
   themeToggle.addEventListener('click', toggleTheme);
+
+  const setLanguageMenuOpen = (open) => {
+    languageMenu.hidden = !open;
+    languageToggle.setAttribute('aria-expanded', String(open));
+    if (open) languageSelect.focus();
+  };
+  languageToggle.addEventListener('click', () => setLanguageMenuOpen(languageMenu.hidden));
+  document.addEventListener('click', (event) => {
+    if (!languageMenu.hidden && !languageMenu.contains(event.target) && !languageToggle.contains(event.target)) {
+      setLanguageMenuOpen(false);
+    }
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !languageMenu.hidden) {
+      setLanguageMenuOpen(false);
+      languageToggle.focus();
+    }
+  });
+  languageSelect.addEventListener('change', () => {
+    currentLanguage = languageSelect.value;
+    saveLanguagePreference(currentLanguage);
+    setLanguageMenuOpen(false);
+    languageToggle.focus();
+    if (activeVideoTabId !== null) {
+      requestCaptions(activeVideoTabId, statusDiv, searchContainer, searchInput, resultsList);
+    }
+  });
   
   try {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -31,9 +65,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       statusDiv.className = 'message error';
       return;
     }
+
+    activeVideoTabId = currentTab.id;
     
     // Check if content script is loaded properly and request captions
     requestCaptions(currentTab.id, statusDiv, searchContainer, searchInput, resultsList);
+
+    retryButton.addEventListener('click', () => {
+      requestCaptions(currentTab.id, statusDiv, searchContainer, searchInput, resultsList, false, true);
+    });
     
     // Set up search functionality
     searchInput.addEventListener('input', debounce(() => {
@@ -74,10 +114,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
-// Get theme and sort order from storage and apply them
-async function initializePreferences(sortText) {
+// Get saved popup preferences and apply them
+async function initializePreferences(sortText, languageSelect) {
   try {
-    const result = await chrome.storage.local.get(['theme', 'sortOrder']);
+    const result = await chrome.storage.local.get(['theme', 'sortOrder', 'captionLanguage']);
     
     // Initialize theme
     currentTheme = result.theme || 'light';
@@ -89,11 +129,19 @@ async function initializePreferences(sortText) {
     if (sortText) {
       sortText.textContent = currentSortOrder.charAt(0).toUpperCase() + currentSortOrder.slice(1);
     }
+
+    currentLanguage = result.captionLanguage || '';
+    if (Array.from(languageSelect.options).some(option => option.value === currentLanguage)) {
+      languageSelect.value = currentLanguage;
+    } else {
+      currentLanguage = '';
+    }
   } catch (error) {
     console.error('Error initializing preferences:', error);
     // Default to light theme and score sort if there's an error
     currentTheme = 'light';
     currentSortOrder = 'score';
+    currentLanguage = '';
     applyTheme('light');
   }
 }
@@ -128,40 +176,70 @@ async function saveSortOrder(sortOrder) {
   }
 }
 
-// Request captions once and wait for the content script to complete Defuddle parsing.
-function requestCaptions(tabId, statusDiv, searchContainer, searchInput, resultsList, didBootstrap = false) {
-  statusDiv.textContent = 'Loading transcript...';
+async function saveLanguagePreference(language) {
+  try {
+    await chrome.storage.local.set({ captionLanguage: language });
+  } catch (error) {
+    console.error('Error saving caption language:', error);
+  }
+}
+
+function showCaptionError(statusDiv, searchContainer, message) {
+  statusDiv.textContent = message;
+  statusDiv.className = 'message error';
+  searchContainer.style.display = 'none';
+  document.getElementById('retry-button').hidden = false;
+}
+
+function displayLoadedLanguage(language) {
+  if (!language) return '';
+  try {
+    return new Intl.DisplayNames([navigator.language], { type: 'language' }).of(language) || language;
+  } catch {
+    return language;
+  }
+}
+
+function requestCaptions(tabId, statusDiv, searchContainer, searchInput, resultsList, didBootstrap = false, force = false) {
+  const requestSequence = ++captionRequestSequence;
+  subtitles = [];
+  searchContainer.style.display = 'none';
+  document.getElementById('retry-button').hidden = true;
+  statusDiv.textContent = 'Checking captions...';
   statusDiv.className = 'message loading';
   
   chrome.tabs.sendMessage(
     tabId, 
-    { action: 'getCaptions' },
+    { action: 'getCaptions', language: currentLanguage, force },
     (response) => {
+      const connectionError = chrome.runtime.lastError;
+      if (requestSequence !== captionRequestSequence) return;
       // Handle connection error
-      if (chrome.runtime.lastError) {
-        console.error(chrome.runtime.lastError);
+      if (connectionError) {
+        console.error(connectionError);
         if (!didBootstrap) {
-          bootstrapContentScriptAndRetry(tabId, statusDiv, searchContainer, searchInput, resultsList);
+          bootstrapContentScriptAndRetry(tabId, statusDiv, searchContainer, searchInput, resultsList, requestSequence, force);
           return;
         }
-        statusDiv.textContent = 'Transcript is not available right now. Please refresh the video page and try again.';
-        statusDiv.className = 'message error';
+        showCaptionError(statusDiv, searchContainer, 'Could not connect to this video. Please try again.');
         return;
       }
       
       if (!response) {
         if (!didBootstrap) {
-          bootstrapContentScriptAndRetry(tabId, statusDiv, searchContainer, searchInput, resultsList);
+          bootstrapContentScriptAndRetry(tabId, statusDiv, searchContainer, searchInput, resultsList, requestSequence, force);
           return;
         }
-        statusDiv.textContent = 'Extension not loaded properly. Try refreshing the page.';
-        statusDiv.className = 'message error';
+        showCaptionError(statusDiv, searchContainer, 'Could not connect to this video. Please try again.');
         return;
       }
       
       if (!response.success) {
-        statusDiv.textContent = response.error || 'Transcriptions were not available, or the extension was not able to fetch them.';
-        statusDiv.className = 'message error';
+        if (response.code === 'missing_defuddle' && !didBootstrap) {
+          bootstrapContentScriptAndRetry(tabId, statusDiv, searchContainer, searchInput, resultsList, requestSequence, force);
+          return;
+        }
+        showCaptionError(statusDiv, searchContainer, response.error || 'Could not load captions yet. Please try again.');
         return;
       }
       
@@ -172,13 +250,13 @@ function requestCaptions(tabId, statusDiv, searchContainer, searchInput, results
       transcriptMetadata = response.transcriptMetadata || {};
       
       if (subtitles.length === 0) {
-        statusDiv.textContent = 'Transcript not available.';
-        statusDiv.className = 'message error';
+        showCaptionError(statusDiv, searchContainer, 'Could not load captions yet. Please try again.');
         return;
       }
       
       // Show search interface - using DOM manipulation instead of innerHTML
-      statusDiv.textContent = 'Loaded captions for: ';
+      const loadedLanguage = displayLoadedLanguage(transcriptMetadata.language);
+      statusDiv.textContent = loadedLanguage ? `Loaded ${loadedLanguage} captions for: ` : 'Loaded captions for: ';
       const boldElement = document.createElement('b');
       boldElement.textContent = response.videoTitle;
       statusDiv.appendChild(boldElement);
@@ -190,7 +268,7 @@ function requestCaptions(tabId, statusDiv, searchContainer, searchInput, results
   );
 }
 
-function bootstrapContentScriptAndRetry(tabId, statusDiv, searchContainer, searchInput, resultsList) {
+function bootstrapContentScriptAndRetry(tabId, statusDiv, searchContainer, searchInput, resultsList, requestSequence, force) {
   statusDiv.textContent = 'Initializing extension...';
   statusDiv.className = 'message loading';
 
@@ -198,14 +276,15 @@ function bootstrapContentScriptAndRetry(tabId, statusDiv, searchContainer, searc
     target: { tabId },
     files: ['defuddle.js', 'content.js']
   }, () => {
-    if (chrome.runtime.lastError) {
-      console.error(chrome.runtime.lastError);
-      statusDiv.textContent = 'Transcript is not available right now. Please refresh the video page and try again.';
-      statusDiv.className = 'message error';
+    const injectionError = chrome.runtime.lastError;
+    if (requestSequence !== captionRequestSequence) return;
+    if (injectionError) {
+      console.error(injectionError);
+      showCaptionError(statusDiv, searchContainer, 'Could not initialize captions. Please try again.');
       return;
     }
 
-    requestCaptions(tabId, statusDiv, searchContainer, searchInput, resultsList, true);
+    requestCaptions(tabId, statusDiv, searchContainer, searchInput, resultsList, true, force);
   });
 }
 

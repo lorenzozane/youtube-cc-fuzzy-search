@@ -13,10 +13,10 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
       if (chrome.runtime.lastError || !response) {
         console.log('YouTube CC Search: Content script not detected, injecting...');
         
-        // Inject the content script
+        // Inject Defuddle before the content script that uses it.
         chrome.scripting.executeScript({
           target: { tabId: tabId },
-          files: ['content.js']
+          files: ['defuddle.js', 'content.js']
         })
         .then(() => {
           console.log('YouTube CC Search: Content script injected successfully');
