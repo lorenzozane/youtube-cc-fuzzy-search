@@ -61,7 +61,7 @@ h2 {
 }
 
 /* Header settings buttons */
-.theme-toggle, .language-toggle {
+.theme-toggle, .settings-toggle {
   background: none;
   border: none;
   cursor: pointer;
@@ -76,15 +76,15 @@ h2 {
   right: 0;
 }
 
-.language-toggle {
+.theme-toggle {
   right: 32px;
 }
 
-.theme-toggle:hover, .language-toggle:hover {
+.theme-toggle:hover, .settings-toggle:hover {
   background-color: var(--primary-hover);
 }
 
-.theme-toggle:active, .language-toggle:active {
+.theme-toggle:active, .settings-toggle:active {
   background-color: var(--primary-active);
 }
 
@@ -108,33 +108,28 @@ h2 {
   text-align: center;
 }
 
-.language-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 10;
+.settings-page {
   box-sizing: border-box;
-  width: 290px;
+  width: 100%;
   padding: 12px;
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--input-bg);
   color: var(--text-color);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16);
   text-align: left;
 }
 
-.language-menu[hidden] { display: none; }
+[hidden] { display: none !important; }
 
-.language-menu label { font-size: 14px; font-weight: 700; }
+.setting label { font-size: 14px; font-weight: 700; }
 
-.language-menu p {
+.setting p, .settings-hint {
   margin: 7px 0 10px;
   font-size: 12px;
   line-height: 1.4;
 }
 
-.language-menu select {
+.setting select {
   box-sizing: border-box;
   width: 100%;
   padding: 4px;
@@ -143,6 +138,48 @@ h2 {
   background: var(--input-bg);
   color: var(--text-color);
   font-size: 13px;
+}
+
+.header h2 {
+  box-sizing: border-box;
+  padding-right: 62px;
+  text-align: left;
+  font-size: 20px;
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.settings-header h3 { margin: 0; font-size: 16px; }
+
+.settings-back {
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--input-bg);
+  color: var(--text-color);
+  cursor: pointer;
+}
+
+.settings-back:hover { background: var(--primary-hover); }
+
+.setting + .setting {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+.checkbox-setting { display: flex; align-items: center; gap: 8px; }
+.checkbox-setting input { margin: 0; accent-color: var(--primary-color); }
+.settings-hint { margin: 20px 0 0; opacity: 0.75; }
+
+button:focus-visible, select:focus-visible, input:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
 }
 
 .retry-button {

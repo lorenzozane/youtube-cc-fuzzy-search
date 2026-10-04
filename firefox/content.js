@@ -14,6 +14,8 @@ let captionRequestVersion = 0;
 
 const CAPTION_RETRY_DELAYS = [0, 1200, 2500];
 const VIDEO_READY_TIMEOUT = 6000;
+const EXTRACTION_TIMEOUT = 8000;
+const CAPTION_LOAD_TIMEOUT = 30000;
 
 function getVideoId() {
   const urlParams = new URLSearchParams(window.location.search);
@@ -148,6 +150,14 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function withTimeout(promise, ms) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('Caption loading timed out')), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 function videoChanged(targetVideoId, requestVersion) {
   return getVideoId() !== targetVideoId || requestVersion !== captionRequestVersion;
 }
@@ -190,17 +200,20 @@ function captionResponse() {
   };
 }
 
-async function loadCaptions(targetVideoId, language, requestVersion) {
+async function loadCaptions(targetVideoId, language, preserveTranscriptSegments, requestVersion) {
+  // Wait once for navigation to settle; retries already provide their own backoff.
+  if (!await waitForVideoReady(targetVideoId, requestVersion)) {
+    return { success: false, error: 'The video changed while captions were loading. Please try again.' };
+  }
   for (let attempt = 0; attempt < CAPTION_RETRY_DELAYS.length; attempt++) {
     if (attempt > 0) await delay(CAPTION_RETRY_DELAYS[attempt]);
     if (videoChanged(targetVideoId, requestVersion)) break;
-    if (!await waitForVideoReady(targetVideoId, requestVersion)) break;
 
     try {
       const source = document.URL;
-      const options = { url: source };
+      const options = { url: source, extractors: { youtube: { preserveTranscriptSegments } } };
       if (language) options.language = language;
-      const defuddled = await new Defuddle(document, options).parseAsync();
+      const defuddled = await withTimeout(new Defuddle(document, options).parseAsync(), EXTRACTION_TIMEOUT);
       if (videoChanged(targetVideoId, requestVersion)) break;
 
       const markdown = defuddled?.variables?.transcript || '';
@@ -226,7 +239,7 @@ async function loadCaptions(targetVideoId, language, requestVersion) {
       transcriptMarkdown = markdown;
       transcriptMetadata = metadata;
       transcriptDocumentMarkdown = buildTranscriptDocumentMarkdown(metadata, markdown, source);
-      completedCaptionKey = `${targetVideoId}|${language}`;
+      completedCaptionKey = `${targetVideoId}|${language}|${preserveTranscriptSegments}`;
       console.log(`YouTube CC Search: Loaded ${subtitles.length} transcript segments from Defuddle`);
       return captionResponse();
     } catch (error) {
@@ -242,7 +255,7 @@ async function loadCaptions(targetVideoId, language, requestVersion) {
   };
 }
 
-async function fetchCaptions(language = '', force = false) {
+async function fetchCaptions(language = '', force = false, preserveTranscriptSegments = true) {
   const targetVideoId = getVideoId();
   if (!targetVideoId) {
     return { success: false, error: 'Open a YouTube video to load captions.' };
@@ -252,7 +265,7 @@ async function fetchCaptions(language = '', force = false) {
   }
 
   const normalizedLanguage = typeof language === 'string' ? language.trim() : '';
-  const key = `${targetVideoId}|${normalizedLanguage}`;
+  const key = `${targetVideoId}|${normalizedLanguage}|${preserveTranscriptSegments}`;
   if (!force && completedCaptionKey === key && subtitles.length > 0) return captionResponse();
   if (!force && activeCaptionRequest?.key === key) return activeCaptionRequest.promise;
 
@@ -263,7 +276,14 @@ async function fetchCaptions(language = '', force = false) {
   transcriptDocumentMarkdown = '';
   transcriptMetadata = {};
 
-  const promise = loadCaptions(targetVideoId, normalizedLanguage, requestVersion);
+  const promise = withTimeout(
+    loadCaptions(targetVideoId, normalizedLanguage, preserveTranscriptSegments, requestVersion),
+    CAPTION_LOAD_TIMEOUT
+  ).catch(() => {
+    // Prevent an extraction that finishes after the deadline from updating the cache.
+    if (requestVersion === captionRequestVersion) captionRequestVersion++;
+    return { success: false, error: 'YouTube took too long to load captions. Please try again.' };
+  });
   activeCaptionRequest = { key, promise };
   try {
     return await promise;
@@ -282,14 +302,15 @@ function setupMessageListener() {
   // Create a new listener
   messageListener = function(message, sender, sendResponse) {
     if (message.action === 'getCaptions') {
-      return fetchCaptions(message.language, message.force === true).catch((error) => {
+      return fetchCaptions(message.language, message.force === true, message.preserveTranscriptSegments !== false).catch((error) => {
         console.error('Error handling getCaptions message:', error);
         return {
           success: false,
           error: 'Could not load captions yet. Please try again.'
         };
       });
-    } else if (message.action === 'jumpToTimestamp' && message.timestamp) {
+    } else if (message.action === 'jumpToTimestamp' &&
+               Number.isFinite(message.timestamp) && message.timestamp >= 0) {
       const video = document.querySelector('video');
       if (video) {
         video.currentTime = message.timestamp;

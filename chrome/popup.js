@@ -6,7 +6,10 @@ let transcriptMarkdown = '';
 let transcriptDocumentMarkdown = '';
 let transcriptMetadata = {};
 let currentLanguage = '';
+let aggregateSegments = false;
 let captionRequestSequence = 0;
+let captionSlowTimer;
+let captionDeadlineTimer;
 
 // Initialize popup
 document.addEventListener('DOMContentLoaded', async () => {
@@ -17,40 +20,46 @@ document.addEventListener('DOMContentLoaded', async () => {
   const sortToggle = document.getElementById('sort-toggle');
   const sortText = document.getElementById('sort-text');
   const themeToggle = document.getElementById('theme-toggle');
-  const languageToggle = document.getElementById('language-toggle');
-  const languageMenu = document.getElementById('language-menu');
+  const settingsToggle = document.getElementById('settings-toggle');
+  const settingsPage = document.getElementById('settings-page');
+  const transcriptPage = document.getElementById('transcript-page');
+  const settingsBack = document.getElementById('settings-back');
+  const aggregateCheckbox = document.getElementById('aggregate-segments');
   const languageSelect = document.getElementById('language-select');
   const retryButton = document.getElementById('retry-button');
   let activeVideoTabId = null;
   
   // Initialize theme and sort order from storage
-  await initializePreferences(sortText, languageSelect);
+  await initializePreferences(sortText, languageSelect, aggregateCheckbox);
   
   // Set up theme toggle
   themeToggle.addEventListener('click', toggleTheme);
 
-  const setLanguageMenuOpen = (open) => {
-    languageMenu.hidden = !open;
-    languageToggle.setAttribute('aria-expanded', String(open));
-    if (open) languageSelect.focus();
+  const setSettingsOpen = (open) => {
+    settingsPage.hidden = !open;
+    transcriptPage.hidden = open;
+    settingsToggle.setAttribute('aria-expanded', String(open));
+    if (open) settingsBack.focus();
+    else settingsToggle.focus();
   };
-  languageToggle.addEventListener('click', () => setLanguageMenuOpen(languageMenu.hidden));
-  document.addEventListener('click', (event) => {
-    if (!languageMenu.hidden && !languageMenu.contains(event.target) && !languageToggle.contains(event.target)) {
-      setLanguageMenuOpen(false);
-    }
-  });
+  settingsToggle.addEventListener('click', () => setSettingsOpen(settingsPage.hidden));
+  settingsBack.addEventListener('click', () => setSettingsOpen(false));
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && !languageMenu.hidden) {
-      setLanguageMenuOpen(false);
-      languageToggle.focus();
+    if (event.key === 'Escape' && !settingsPage.hidden && event.target !== languageSelect) {
+      event.preventDefault();
+      setSettingsOpen(false);
     }
   });
   languageSelect.addEventListener('change', () => {
     currentLanguage = languageSelect.value;
     saveLanguagePreference(currentLanguage);
-    setLanguageMenuOpen(false);
-    languageToggle.focus();
+    if (activeVideoTabId !== null) {
+      requestCaptions(activeVideoTabId, statusDiv, searchContainer, searchInput, resultsList);
+    }
+  });
+  aggregateCheckbox.addEventListener('change', () => {
+    aggregateSegments = aggregateCheckbox.checked;
+    saveAggregationPreference(aggregateSegments);
     if (activeVideoTabId !== null) {
       requestCaptions(activeVideoTabId, statusDiv, searchContainer, searchInput, resultsList);
     }
@@ -115,9 +124,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // Get saved popup preferences and apply them
-async function initializePreferences(sortText, languageSelect) {
+async function initializePreferences(sortText, languageSelect, aggregateCheckbox) {
   try {
-    const result = await chrome.storage.local.get(['theme', 'sortOrder', 'captionLanguage']);
+    const result = await chrome.storage.local.get(['theme', 'sortOrder', 'captionLanguage', 'aggregateSegments']);
     
     // Initialize theme
     currentTheme = result.theme || 'light';
@@ -130,6 +139,8 @@ async function initializePreferences(sortText, languageSelect) {
       sortText.textContent = currentSortOrder.charAt(0).toUpperCase() + currentSortOrder.slice(1);
     }
 
+    aggregateSegments = result.aggregateSegments === true;
+    aggregateCheckbox.checked = aggregateSegments;
     currentLanguage = result.captionLanguage || '';
     if (Array.from(languageSelect.options).some(option => option.value === currentLanguage)) {
       languageSelect.value = currentLanguage;
@@ -191,6 +202,14 @@ function showCaptionError(statusDiv, searchContainer, message) {
   document.getElementById('retry-button').hidden = false;
 }
 
+async function saveAggregationPreference(aggregate) {
+  try {
+    await chrome.storage.local.set({ aggregateSegments: aggregate });
+  } catch (error) {
+    console.error('Error saving segment preference:', error);
+  }
+}
+
 function displayLoadedLanguage(language) {
   if (!language) return '';
   try {
@@ -200,6 +219,27 @@ function displayLoadedLanguage(language) {
   }
 }
 
+function clearCaptionLoadingTimers() {
+  clearTimeout(captionSlowTimer);
+  clearTimeout(captionDeadlineTimer);
+}
+
+function armCaptionLoadingTimers(statusDiv, searchContainer, requestSequence) {
+  clearCaptionLoadingTimers();
+  captionSlowTimer = setTimeout(() => {
+    if (requestSequence !== captionRequestSequence) return;
+    statusDiv.textContent = 'YouTube is taking longer to load captions. Still trying…';
+    document.getElementById('retry-button').hidden = false;
+  }, 5000);
+  // Also cover a content script or injection that never replies.
+  captionDeadlineTimer = setTimeout(() => {
+    if (requestSequence !== captionRequestSequence) return;
+    captionRequestSequence++;
+    clearCaptionLoadingTimers();
+    showCaptionError(statusDiv, searchContainer, 'YouTube took too long to load captions. Please try again.');
+  }, 35000);
+}
+
 function requestCaptions(tabId, statusDiv, searchContainer, searchInput, resultsList, didBootstrap = false, force = false) {
   const requestSequence = ++captionRequestSequence;
   subtitles = [];
@@ -207,13 +247,15 @@ function requestCaptions(tabId, statusDiv, searchContainer, searchInput, results
   document.getElementById('retry-button').hidden = true;
   statusDiv.textContent = 'Checking captions...';
   statusDiv.className = 'message loading';
+  armCaptionLoadingTimers(statusDiv, searchContainer, requestSequence);
   
   chrome.tabs.sendMessage(
     tabId, 
-    { action: 'getCaptions', language: currentLanguage, force },
+    { action: 'getCaptions', language: currentLanguage, preserveTranscriptSegments: !aggregateSegments, force },
     (response) => {
       const connectionError = chrome.runtime.lastError;
       if (requestSequence !== captionRequestSequence) return;
+      clearCaptionLoadingTimers();
       // Handle connection error
       if (connectionError) {
         console.error(connectionError);
@@ -254,6 +296,7 @@ function requestCaptions(tabId, statusDiv, searchContainer, searchInput, results
         return;
       }
       
+      document.getElementById('retry-button').hidden = true;
       // Show search interface - using DOM manipulation instead of innerHTML
       const loadedLanguage = displayLoadedLanguage(transcriptMetadata.language);
       statusDiv.textContent = loadedLanguage ? `Loaded ${loadedLanguage} captions for: ` : 'Loaded captions for: ';
@@ -262,8 +305,10 @@ function requestCaptions(tabId, statusDiv, searchContainer, searchInput, results
       statusDiv.appendChild(boldElement);
       statusDiv.className = 'message success';
       searchContainer.style.display = 'block';
-      renderTranscriptList(resultsList, subtitles);
-      searchInput.focus();
+      const query = searchInput.value.trim();
+      if (query.length < 2) renderTranscriptList(resultsList, subtitles);
+      else performSearch(query, resultsList, currentSortOrder);
+      if (document.getElementById('settings-page').hidden) searchInput.focus();
     }
   );
 }
@@ -271,6 +316,7 @@ function requestCaptions(tabId, statusDiv, searchContainer, searchInput, results
 function bootstrapContentScriptAndRetry(tabId, statusDiv, searchContainer, searchInput, resultsList, requestSequence, force) {
   statusDiv.textContent = 'Initializing extension...';
   statusDiv.className = 'message loading';
+  armCaptionLoadingTimers(statusDiv, searchContainer, requestSequence);
 
   chrome.scripting.executeScript({
     target: { tabId },
@@ -278,6 +324,8 @@ function bootstrapContentScriptAndRetry(tabId, statusDiv, searchContainer, searc
   }, () => {
     const injectionError = chrome.runtime.lastError;
     if (requestSequence !== captionRequestSequence) return;
+    clearCaptionLoadingTimers();
+    clearCaptionLoadingTimers();
     if (injectionError) {
       console.error(injectionError);
       showCaptionError(statusDiv, searchContainer, 'Could not initialize captions. Please try again.');
@@ -362,7 +410,7 @@ function performSearch(query, resultsList, sortOrder = 'score') {
   });
 
   // Deduplicate results based on timestamp proximity
-  const deduplicatedResults = deduplicateResults(results);
+  const deduplicatedResults = aggregateSegments ? deduplicateResults(results) : [...results].slice(0, 20);
   
   // Sort results based on selected order
   const sortedResults = sortResults(deduplicatedResults, sortOrder);
@@ -521,63 +569,16 @@ function deduplicateResults(results) {
   return deduplicatedResults;
 }
 
-// Create searchable segments with context from the captions
+// Search exactly the segments returned by Defuddle in either mode.
 function createSearchableSegments(subtitles) {
-  const segments = [];
-  const maxContextSize = 5; // Maximum number of captions to include after (increased since we're only looking forward)
-  const maxSegmentDuration = 30; // Maximum duration of a segment in seconds
-  const maxTimeBetweenCaptions = 5; // Maximum allowed time gap between captions in seconds
-  
-  // Process each caption with only following context
-  for (let i = 0; i < subtitles.length; i++) {
-    // Get current caption
-    const currentCaption = subtitles[i];
-    
-    // Extract the primary text from this caption
-    const primaryText = currentCaption.text;
-    
-    // Initialize array to hold context segments
-    const afterContext = [];
-    
-    // Track the start and end time of the context window
-    let contextStartTime = currentCaption.start;
-    let contextEndTime = currentCaption.end;
-    
-    // Add following captions for context, respecting time limit
-    for (let j = i + 1; j <= Math.min(subtitles.length - 1, i + maxContextSize); j++) {
-      // Check if adding this caption would exceed our time limit
-      if (subtitles[j].end - contextStartTime > maxSegmentDuration) {
-        break;
-      }
-      
-      // Check if the time gap between captions is too large
-      const timeGap = subtitles[j].start - contextEndTime;
-      if (timeGap > maxTimeBetweenCaptions) {
-        break;
-      }
-      
-      afterContext.push(subtitles[j].text);
-      contextEndTime = subtitles[j].end;
-    }
-    
-    // Combine all text with proper spacing
-    const contextText = [
-      primaryText,
-      ...afterContext
-    ].join(' ');
-    
-    // Add the segment with its context and expanded time boundaries
-    segments.push({
-      text: contextText,
-      start: currentCaption.start,        // Original start time (for jumping to timestamp)
-      end: currentCaption.end,            // Original end time
-      contextStart: contextStartTime,     // Start time in the context window
-      contextEnd: contextEndTime,         // Latest time in the context window
-      originalIndex: i
-    });
-  }
-  
-  return segments;
+  return subtitles.map((caption, originalIndex) => ({
+    text: caption.text,
+    start: caption.start,
+    end: caption.end,
+    contextStart: caption.start,
+    contextEnd: caption.end,
+    originalIndex
+  }));
 }
 
 // Helper function to debounce input events

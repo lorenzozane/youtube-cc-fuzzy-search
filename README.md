@@ -17,12 +17,13 @@ A browser extension that enables fuzzy search through YouTube video subtitles (C
 - Clicking on search results lets the video automatically **Jump to Timestamp**
 - Search results are shown with surrounding **Caption Context** for better understanding
 - **Real-time Search** updates results as you type with minimal delay
+- **Settings** lets you choose a preferred caption language and whether Defuddle groups subtitle segments. Subtitles stay separate with granular timestamps by default. Changing grouping reloads the transcript; preferences are saved automatically.
 
 ## Feature Roadmap
 - [x] Custom ordering
 - [x] Dark mode
 - [x] Shortcut to open extension (Ctrl+Shift+U)
-- [ ] Add settings for parameters
+- [x] Caption language and segment grouping settings
 
 ## Installation
 

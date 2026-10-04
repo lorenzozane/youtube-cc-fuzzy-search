@@ -9,10 +9,9 @@
   <div id="app">
     <div class="header">
       <h2>YouTube CC Search</h2>
-      <button id="language-toggle" class="language-toggle" type="button" title="Caption language" aria-label="Caption language settings" aria-expanded="false" aria-controls="language-menu">
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="10"></circle>
-          <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+      <button id="settings-toggle" class="settings-toggle" type="button" title="Settings" aria-label="Settings" aria-expanded="false" aria-controls="settings-page">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path fill-rule="evenodd" d="m9.2 2-.6 2.3-1.7 1-2.3-.6-2.8 4.6L3.5 11v2l-1.7 1.7 2.8 4.6 2.3-.6 1.7 1 .6 2.3h5.6l.6-2.3 1.7-1 2.3.6 2.8-4.6-1.7-1.7v-2l1.7-1.7-2.8-4.6-2.3.6-1.7-1-.6-2.3H9.2ZM15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"></path>
         </svg>
       </button>
       <button id="theme-toggle" class="theme-toggle" title="Dark/Light Mode">
@@ -23,10 +22,16 @@
           <path d="M6 .278a.768.768 0 0 1 .08.858 7.208 7.208 0 0 0-.878 3.46c0 4.021 3.278 7.277 7.318 7.277.527 0 1.04-.055 1.533-.16a.787.787 0 0 1 .81.316.733.733 0 0 1-.031.893A8.349 8.349 0 0 1 8.344 16C3.734 16 0 12.286 0 7.71 0 4.266 2.114 1.312 5.124.06A.752.752 0 0 1 6 .278z"/>
         </svg>
       </button>
-      <div id="language-menu" class="language-menu" hidden>
+    </div>
+    <section id="settings-page" class="settings-page" aria-labelledby="settings-title" hidden>
+      <div class="settings-header">
+        <button id="settings-back" class="settings-back" type="button">← Back</button>
+        <h3 id="settings-title">Settings</h3>
+      </div>
+      <div class="setting">
         <label for="language-select">Caption language</label>
         <p id="language-note">This is your default preference. If a video doesn't have it, the extension will use another available language.</p>
-        <select id="language-select" size="8" aria-describedby="language-note">
+        <select id="language-select" aria-describedby="language-note">
         <option value="">Auto (YouTube default)</option>
         <option value="ar">Arabic</option>
         <option value="zh-CN">Chinese (Simplified)</option>
@@ -49,7 +54,16 @@
         <option value="vi">Vietnamese</option>
         </select>
       </div>
-    </div>
+      <div class="setting">
+        <label class="checkbox-setting" for="aggregate-segments">
+          <input id="aggregate-segments" type="checkbox" aria-describedby="segments-note">
+          Group subtitle segments
+        </label>
+        <p id="segments-note">Combine subtitles into longer passages. Off by default to keep each subtitle separate with its own timestamp.</p>
+      </div>
+      <p class="settings-hint">Changes apply immediately and are saved for next time.</p>
+    </section>
+    <div id="transcript-page">
     <div id="status" class="message">Loading...</div>
     <button id="retry-button" class="retry-button" type="button" hidden>Retry loading captions</button>
     <div id="search-container" style="display:none;">
@@ -69,6 +83,7 @@
       <div id="results-container">
         <div id="results-list"></div>
       </div>
+    </div>
     </div>
   </div>
   <script src="fuzzysort.js"></script>

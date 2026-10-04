@@ -17,12 +17,15 @@ function loadContentScript(browserName, outcomes, includeDefuddle = true) {
   let ready = true;
   let ticks = 0;
   let readyAtTick = 0;
+  const timers = new Map();
+  let timerId = 0;
+  const video = { currentTime: 10, playCount: 0, play() { this.playCount++; } };
   const document = {
     title: 'Test video - YouTube',
     readyState: 'complete',
     get URL() { return `https://www.youtube.com/watch${location.search}`; },
     querySelector(selector) {
-      if (selector === 'video') return ready ? {} : null;
+      if (selector === 'video') return ready ? video : null;
       if (selector === 'ytd-watch-flexy[video-id]') {
         return { getAttribute: () => new URLSearchParams(location.search).get('v') };
       }
@@ -30,8 +33,8 @@ function loadContentScript(browserName, outcomes, includeDefuddle = true) {
     }
   };
   class Defuddle {
-    constructor(_document, options) { optionsSeen.push(options); }
-    parseAsync() { return outcomes.shift()(); }
+    constructor(_document, options) { optionsSeen.push(options); this.options = options; }
+    parseAsync() { return outcomes.shift()(this.options); }
   }
   const onMessage = {
     addListener(value) { listener = value; },
@@ -44,11 +47,18 @@ function loadContentScript(browserName, outcomes, includeDefuddle = true) {
     URLSearchParams,
     ...(includeDefuddle ? { Defuddle } : {}),
     console: { log() {}, warn() {}, error() {} },
-    setTimeout(callback) {
+    setTimeout(callback, ms) {
+      const id = ++timerId;
+      if (ms >= 8000) {
+        timers.set(id, { callback, ms });
+        return id;
+      }
       ticks++;
       if (ticks >= readyAtTick) ready = true;
       queueMicrotask(callback);
+      return id;
     },
+    clearTimeout(id) { timers.delete(id); },
     [browserName === 'firefox' ? 'browser' : 'chrome']: api
   };
   const source = fs.readFileSync(path.join(__dirname, '..', browserName, 'content.js'), 'utf8');
@@ -62,6 +72,13 @@ function loadContentScript(browserName, outcomes, includeDefuddle = true) {
     send,
     location,
     optionsSeen,
+    video,
+    fireTimer(ms) {
+      const entry = Array.from(timers.entries()).find(([, timer]) => timer.ms === ms);
+      assert.ok(entry, 'Expected pending timer at ' + ms);
+      timers.delete(entry[0]);
+      entry[1].callback();
+    },
     isReady() { return ready; },
     setReadyAfterTicks(count) { ready = false; readyAtTick = ticks + count; },
     rerun() { vm.runInNewContext(source, context); }
@@ -69,6 +86,51 @@ function loadContentScript(browserName, outcomes, includeDefuddle = true) {
 }
 
 for (const browserName of ['chrome', 'firefox']) {
+  test(`${browserName}: jumps to 00:00 and resumes playback`, async () => {
+    const script = loadContentScript(browserName, []);
+    const result = await script.send({ action: 'jumpToTimestamp', timestamp: 0 });
+    assert.equal(result.success, true);
+    assert.equal(script.video.currentTime, 0);
+    assert.equal(script.video.playCount, 1);
+  });
+
+  test(`${browserName}: a hanging extraction times out and retries successfully`, async () => {
+    const script = loadContentScript(browserName, [
+      () => new Promise(() => {}),
+      () => transcript('Recovered')
+    ]);
+    const pending = script.send({ action: 'getCaptions' });
+    for (let i = 0; i < 20 && script.optionsSeen.length === 0; i++) await Promise.resolve();
+    script.fireTimer(8000);
+    const result = await pending;
+    assert.equal(result.success, true);
+    assert.equal(result.subtitles[0].text, 'Recovered');
+    assert.equal(script.optionsSeen.length, 2);
+  });
+
+  test(`${browserName}: the overall deadline releases a stuck request and rejects its late transcript`, async () => {
+    let resolveFirst;
+    const script = loadContentScript(browserName, [
+      () => new Promise(resolve => { resolveFirst = resolve; }),
+      () => transcript('Fresh')
+    ]);
+    const pending = script.send({ action: 'getCaptions' });
+    for (let i = 0; i < 20 && script.optionsSeen.length === 0; i++) await Promise.resolve();
+    const sameRequest = script.send({ action: 'getCaptions' });
+    script.fireTimer(30000);
+    const result = await pending;
+    assert.equal(result.success, false);
+    assert.match(result.error, /too long/);
+    assert.equal((await sameRequest).success, false);
+    const fresh = await script.send({ action: 'getCaptions', force: true });
+    assert.equal(fresh.subtitles[0].text, 'Fresh');
+    resolveFirst(transcript('Late'));
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+    const cached = await script.send({ action: 'getCaptions' });
+    assert.equal(cached.subtitles[0].text, 'Fresh');
+    assert.equal(script.optionsSeen.length, 2);
+  });
+
   test(`${browserName}: reports a missing reader for popup reinjection`, async () => {
     const script = loadContentScript(browserName, [], false);
     const result = await script.send({ action: 'getCaptions', language: '' });
@@ -86,6 +148,71 @@ for (const browserName of ['chrome', 'firefox']) {
     const result = await script.send({ action: 'getCaptions', language: '' });
     assert.equal(result.success, true);
     assert.equal(script.optionsSeen.length, 1);
+    assert.equal(script.optionsSeen[0].extractors.youtube.preserveTranscriptSegments, true);
+  });
+
+  test(`${browserName}: preserves individual transcript timestamps`, async () => {
+    const script = loadContentScript(browserName, [() => ({
+      variables: { transcript: '**0:01** · First\n**0:03** · Second\n### Chapter\n**0:05** · Third' }
+    })]);
+    const result = await script.send({ action: 'getCaptions', language: 'it' });
+    assert.deepEqual(Array.from(result.subtitles, segment => segment.start), [1, 3, 5]);
+    assert.equal(result.subtitles[2].section, 'Chapter');
+    assert.equal(script.optionsSeen[0].extractors.youtube.preserveTranscriptSegments, true);
+    assert.equal(script.optionsSeen[0].language, 'it');
+  });
+
+  test(`${browserName}: changing grouping reloads the extractor and bypasses the other mode's cache`, async () => {
+    const extract = options => ({
+      variables: { transcript: options.extractors.youtube.preserveTranscriptSegments
+        ? '**0:01** · First\n**0:03** · Second'
+        : '**0:01** · First Second' }
+    });
+    const script = loadContentScript(browserName, [extract, extract, extract]);
+    const separate = await script.send({ action: 'getCaptions' });
+    assert.equal(separate.subtitles.length, 2);
+    const grouped = await script.send({ action: 'getCaptions', preserveTranscriptSegments: false });
+    assert.equal(grouped.subtitles.length, 1);
+    assert.equal(grouped.subtitles[0].text, 'First Second');
+    assert.equal(script.optionsSeen[1].extractors.youtube.preserveTranscriptSegments, false);
+    await script.send({ action: 'getCaptions', preserveTranscriptSegments: false });
+    assert.equal(script.optionsSeen.length, 2);
+    const separateAgain = await script.send({ action: 'getCaptions', preserveTranscriptSegments: true });
+    assert.deepEqual(Array.from(separateAgain.subtitles, segment => segment.start), [1, 3]);
+    assert.equal(script.optionsSeen.length, 3);
+
+    // Verify the public option reaches the extractor through the actual bundled Defuddle.
+    // A permissive mock alone would miss an option supplied at the wrong nesting level.
+    const BundledDefuddle = require(path.join('..', browserName, 'defuddle.js'));
+    for (const options of script.optionsSeen) {
+      const reader = new BundledDefuddle({}, options);
+      reader.getSchemaOrgData = () => ({});
+      let forwarded;
+      await reader.tryAsyncExtractor((_document, _url, _schema, extractorOptions) => {
+        forwarded = extractorOptions;
+        return null;
+      });
+      assert.equal(forwarded.youtube.preserveTranscriptSegments,
+        options.extractors.youtube.preserveTranscriptSegments);
+    }
+  });
+
+  test(`${browserName}: a late response from the previous grouping mode cannot replace the new transcript`, async () => {
+    let resolveFirst;
+    const pending = new Promise(resolve => { resolveFirst = resolve; });
+    const script = loadContentScript(browserName, [
+      () => pending,
+      () => transcript('Grouped')
+    ]);
+    const oldRequest = script.send({ action: 'getCaptions', preserveTranscriptSegments: true });
+    for (let i = 0; i < 10 && script.optionsSeen.length === 0; i++) await Promise.resolve();
+    const current = await script.send({ action: 'getCaptions', preserveTranscriptSegments: false });
+    assert.equal(current.subtitles[0].text, 'Grouped');
+    resolveFirst(transcript('Old separate transcript'));
+    assert.equal((await oldRequest).success, false);
+    const cached = await script.send({ action: 'getCaptions', preserveTranscriptSegments: false });
+    assert.equal(cached.subtitles[0].text, 'Grouped');
+    assert.equal(script.optionsSeen.length, 2);
   });
 
   test(`${browserName}: retries an early empty result, then caches success`, async () => {
