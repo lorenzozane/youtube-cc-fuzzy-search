@@ -149,8 +149,8 @@ h2 {
 
 .header h2 {
   box-sizing: border-box;
-  padding-right: 62px;
-  text-align: left;
+  padding: 0 62px;
+  text-align: center;
   font-size: 20px;
 }
 
